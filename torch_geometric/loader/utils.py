@@ -38,6 +38,7 @@ def to_csc(
     device: Optional[torch.device] = None,
     share_memory: bool = False,
     is_sorted: bool = False,
+    weighted: bool = False
 ) -> Tuple[Tensor, Tensor, OptTensor]:
     # Convert the graph data into a suitable format for sampling (CSC format).
     # Returns the `colptr` and `row` indices of the graph, as well as an
@@ -58,22 +59,30 @@ def to_csc(
             perm = (col * data.size(0)).add_(row).argsort()
             row = row[perm]
         colptr = torch.ops.torch_sparse.ind2ptr(col[perm], data.size(1))
+        if (data.edge_weight is not None) & weighted:
+            weights = data.edge_weight[perm]
+            
     else:
         row = torch.empty(0, dtype=torch.long, device=device)
         colptr = torch.zeros(data.num_nodes + 1, dtype=torch.long,
                              device=device)
-
+        if (data.edge_weight is not None) & weighted:
+            weights = data.edge_weight
+    
     colptr = colptr.to(device)
     row = row.to(device)
     perm = perm.to(device) if perm is not None else None
+    weights = weights.to(device) if perm is not None else None
 
     if not colptr.is_cuda and share_memory:
         colptr.share_memory_()
         row.share_memory_()
         if perm is not None:
             perm.share_memory_()
+        if weights is not None:
+            weights.share_memory_()
 
-    return colptr, row, perm
+    return colptr, row, perm, weights
 
 
 def to_hetero_csc(
@@ -81,6 +90,7 @@ def to_hetero_csc(
     device: Optional[torch.device] = None,
     share_memory: bool = False,
     is_sorted: bool = False,
+    weighted: bool = False,
 ) -> Tuple[Dict[str, Tensor], Dict[str, Tensor], Dict[str, OptTensor]]:
     # Convert the heterogeneous graph data into a suitable format for sampling
     # (CSC format).
@@ -88,14 +98,14 @@ def to_hetero_csc(
     # permutations for each edge type, respectively.
     # Since C++ cannot take dictionaries with tuples as key as input, edge type
     # triplets are converted into single strings.
-    colptr_dict, row_dict, perm_dict = {}, {}, {}
+    colptr_dict, row_dict, perm_dict, weights_dict = {}, {}, {}
 
     for store in data.edge_stores:
         key = edge_type_to_str(store._key)
-        out = to_csc(store, device, share_memory, is_sorted)
-        colptr_dict[key], row_dict[key], perm_dict[key] = out
+        out = to_csc(store, device, share_memory, is_sorted, weighted)
+        colptr_dict[key], row_dict[key], perm_dict[key], weights_dict[key] = out
 
-    return colptr_dict, row_dict, perm_dict
+    return colptr_dict, row_dict, perm_dict, weights_dict
 
 
 def filter_node_store_(store: NodeStorage, out_store: NodeStorage,

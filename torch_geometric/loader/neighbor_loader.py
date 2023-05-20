@@ -29,6 +29,7 @@ class NeighborSampler:
         input_type: Optional[Any] = None,
         time_attr: Optional[str] = None,
         is_sorted: bool = False,
+        weighted: bool = False,
         share_memory: bool = False,
     ):
         self.data_cls = data.__class__ if isinstance(
@@ -37,6 +38,7 @@ class NeighborSampler:
         self.replace = replace
         self.directed = directed
         self.node_time = None
+        self.weighted = weighted
 
         # TODO Unify the following conditionals behind the `FeatureStore`
         # and `GraphStore` API
@@ -52,8 +54,8 @@ class NeighborSampler:
 
             # Convert the graph data into a suitable format for sampling.
             out = to_csc(data, device='cpu', share_memory=share_memory,
-                         is_sorted=is_sorted)
-            self.colptr, self.row, self.perm = out
+                         is_sorted=is_sorted, weighted=weighted)
+            self.colptr, self.row, self.perm, self.weights = out
             assert isinstance(num_neighbors, (list, tuple))
 
         # If we are working with a `HeteroData` object, convert each edge
@@ -68,8 +70,8 @@ class NeighborSampler:
             # NOTE: Since C++ cannot take dictionaries with tuples as key as
             # input, edge type triplets are converted into single strings.
             out = to_hetero_csc(data, device='cpu', share_memory=share_memory,
-                                is_sorted=is_sorted)
-            self.colptr_dict, self.row_dict, self.perm_dict = out
+                                is_sorted=is_sorted, weighted=weighted)
+            self.colptr_dict, self.row_dict, self.perm_dict, self.weights_dict = out
 
             self.node_types, self.edge_types = data.metadata()
             self._set_num_neighbors_and_num_hops(num_neighbors)
